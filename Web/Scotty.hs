@@ -1,4 +1,3 @@
-{-# LANGUAGE OverloadedStrings, RankNTypes #-}
 -- | It should be noted that most of the code snippets below depend on the
 -- OverloadedStrings language pragma.
 --
@@ -6,47 +5,92 @@
 -- you will likely want to modify 'Trans.settings' and the 'defaultHandler'. See
 -- the comments on each of these functions for more information.
 module Web.Scotty
-    ( -- * scotty-to-WAI
-      scotty, scottyApp, scottyOpts, scottySocket, Options(..)
-      -- * Defining Middleware and Routes
-      --
-      -- | 'Middleware' and routes are run in the order in which they
-      -- are defined. All middleware is run first, followed by the first
-      -- route that matches. If no route matches, a 404 response is given.
-    , middleware, get, post, put, delete, patch, options, addroute, matchAny, notFound, setMaxRequestBodySize
-      -- ** Route Patterns
-    , capture, regex, function, literal
-      -- ** Accessing the Request, Captures, and Query Parameters
-    , request, header, headers, body, bodyReader, param, params, jsonData, files
-      -- ** Modifying the Response and Redirecting
-    , status, addHeader, setHeader, redirect
-      -- ** Setting Response Body
-      --
-      -- | Note: only one of these should be present in any given route
-      -- definition, as they completely replace the current 'Response' body.
-    , text, html, file, json, stream, raw
-      -- ** Exceptions
-    , raise, raiseStatus, rescue, next, finish, defaultHandler, liftAndCatchIO
-      -- * Parsing Parameters
-    , Param, Trans.Parsable(..), Trans.readEither
-      -- * Types
-    , ScottyM, ActionM, RoutePattern, File, Kilobytes
-    ) where
+  ( -- * scotty-to-WAI
+    scotty
+  , scottyApp
+  , scottyOpts
+  , scottySocket
+  , Options (..)
+    -- * Defining Middleware and Routes
+    --
+    -- | 'Middleware' and routes are run in the order in which they
+    -- are defined. All middleware is run first, followed by the first
+    -- route that matches. If no route matches, a 404 response is given.
+  , Web.Scotty.middleware
+  , Web.Scotty.get
+  , Web.Scotty.post
+  , Web.Scotty.put
+  , Web.Scotty.delete
+  , Web.Scotty.patch
+  , Web.Scotty.options
+  , Web.Scotty.addroute
+  , Web.Scotty.matchAny
+  , Web.Scotty.notFound
+  , Web.Scotty.setMaxRequestBodySize
+    -- ** Route Patterns
+  , Web.Scotty.capture
+  , Web.Scotty.regex
+  , Web.Scotty.function
+  , Web.Scotty.literal
+    -- ** Accessing the Request, Captures, and Query Parameters
+  , Web.Scotty.request
+  , Web.Scotty.header
+  , Web.Scotty.headers
+  , Web.Scotty.body
+  , Web.Scotty.bodyReader
+  , Web.Scotty.param
+  , Web.Scotty.params
+  , Web.Scotty.jsonData
+  , Web.Scotty.files
+    -- ** Modifying the Response and Redirecting
+  , Web.Scotty.status
+  , Web.Scotty.addHeader
+  , Web.Scotty.setHeader
+  , Web.Scotty.redirect
+    -- ** Setting Response Body
+    --
+    -- | Note: only one of these should be present in any given route
+    -- definition, as they completely replace the current 'Response' body.
+  , Web.Scotty.text
+  , Web.Scotty.html
+  , Web.Scotty.file
+  , Web.Scotty.json
+  , Web.Scotty.stream
+  , Web.Scotty.raw
+    -- ** Exceptions
+  , Web.Scotty.raise
+  , Web.Scotty.raiseStatus
+  , Web.Scotty.rescue
+  , Web.Scotty.next
+  , Web.Scotty.finish
+  , Web.Scotty.defaultHandler
+  , Web.Scotty.liftAndCatchIO
+    -- * Parsing Parameters
+  , Param
+  , Trans.Parsable (..)
+  , Trans.readEither
+    -- * Types
+  , ScottyM
+  , ActionM
+  , RoutePattern
+  , File
+  , Kilobytes
+  ) where
+
+import Data.Aeson (FromJSON, ToJSON)
+import Data.ByteString.Lazy.Char8 (ByteString)
+import Data.Text.Lazy (Text)
+import Network.HTTP.Types (Status, StdMethod)
+import Network.Socket (Socket)
+import Network.Wai.Handler.Warp (Port)
+
+import qualified Data.ByteString as BS
+import qualified Network.Wai as Wai
+
+import Web.Scotty.Impl
 
 -- With the exception of this, everything else better just import types.
 import qualified Web.Scotty.Trans as Trans
-
-import Data.Aeson (FromJSON, ToJSON)
-import qualified Data.ByteString as BS
-import Data.ByteString.Lazy.Char8 (ByteString)
-import Data.Text.Lazy (Text)
-
-import Network.HTTP.Types (Status, StdMethod)
-import Network.Socket (Socket)
-import Network.Wai (Application, Middleware, Request, StreamingBody)
-import Network.Wai.Handler.Warp (Port)
-
-import Web.Scotty.Internal.Types (ScottyT, ActionT, Param, RoutePattern, Options, File, Kilobytes)
 
 type ScottyM = ScottyT Text IO
 type ActionM = ActionT Text IO
@@ -68,7 +112,7 @@ scottySocket opts sock = Trans.scottySocketT opts sock id
 
 -- | Turn a scotty application into a WAI 'Application', which can be
 -- run with any WAI handler.
-scottyApp :: ScottyM () -> IO Application
+scottyApp :: ScottyM () -> IO Wai.Application
 scottyApp = Trans.scottyAppT id
 
 -- | Global handler for uncaught exceptions.
@@ -86,12 +130,12 @@ defaultHandler = Trans.defaultHandler
 -- | Use given middleware. Middleware is nested such that the first declared
 -- is the outermost middleware (it has first dibs on the request and last action
 -- on the response). Every middleware is run on each request.
-middleware :: Middleware -> ScottyM ()
+middleware :: Wai.Middleware -> ScottyM ()
 middleware = Trans.middleware
 
 -- | Set global size limit for the request body. Requests with body size exceeding the limit will not be
--- processed and an HTTP response 413 will be returned to the client. Size limit needs to be greater than 0, 
--- otherwise the application will terminate on start. 
+-- processed and an HTTP response 413 will be returned to the client. Size limit needs to be greater than 0,
+-- otherwise the application will terminate on start.
 setMaxRequestBodySize :: Kilobytes -> ScottyM ()
 setMaxRequestBodySize = Trans.setMaxRequestBodySize
 
@@ -158,7 +202,7 @@ redirect :: Text -> ActionM a
 redirect = Trans.redirect
 
 -- | Get the 'Request' object.
-request :: ActionM Request
+request :: ActionM Wai.Request
 request = Trans.request
 
 -- | Get list of uploaded files.
@@ -237,7 +281,7 @@ json = Trans.json
 -- | Set the body of the response to a StreamingBody. Doesn't set the
 -- \"Content-Type\" header, so you probably want to do that on your
 -- own with 'setHeader'.
-stream :: StreamingBody -> ActionM ()
+stream :: Wai.StreamingBody -> ActionM ()
 stream = Trans.stream
 
 -- | Set the body of the response to the given 'BL.ByteString' value. Doesn't set the
@@ -337,7 +381,7 @@ capture = Trans.capture
 -- >>> curl http://localhost:3000/
 -- HTTP/1.1
 --
-function :: (Request -> Maybe [Param]) -> RoutePattern
+function :: (Wai.Request -> Maybe [Param]) -> RoutePattern
 function = Trans.function
 
 -- | Build a route that requires the requested path match exactly, without captures.
